@@ -1,0 +1,287 @@
+---
+title: "9/5/23 Workshop working demo"
+author: "Bethany & Cid"
+date: "2023-9-5"
+output: html_document
+---
+
+# RStudio Project
+
+* How to create a RStudio Project:
+  - Open R Studio
+  - Start a new project
+  - Chose a director and project a name for your project
+  - And then create a markdown file or any file, this file will always be in the folder where you created the project
+  
+# Finishing up R markdown
+
+### Here is how you can create a code chuck:
+
+```{r}
+options(repos = c(CRAN = "https://cran.r-project.org/"))
+install.packages("tidyverse")
+library(tidyverse)
+```
+
+# Data Inspection:
+
+> Before diving into data manipulation, it's crucial to first conduct a thorough inspection of the dataset. This initial exploration helps us identify what needs to be cleaned or transformed, and it also informs us about the kind of output or analysis we should aim for.
+
+Let's import the data! 
+```{r}
+data<- read.csv("Grooming_Store.csv")
+```
+
+
+For today's data, we have our data frame from a table of a pet grooming shop. The shop had been collecting simple information for client analysis. Your task of this week is to familiarize yourself with what is in the data frame and do some simply cleaning for further analysis:
+
+Here is the form that was filled out during each grooming visit
+![Form 1](1.png)
+
+![Form 2](2.png)
+
+### 1. First thing to do: pull down the overview of the data in the environment tab
+
+##### Environment overview
+
+* Information
+- Number of columns and number of rows
+- Column names
+- Type of data
+- A few data in the first rows of this column
+
+### 2. Let's inspect the first few rows of the data frame:
+
+##### head(): gives you the first 6 rows of the data frame, you can set to a specific number of rows
+
+```{r}
+head(data)
+head(data, 3)
+```
+### 3. Let's inspect the last few rows of the data frame:
+
+##### tail(): gives you the last 6 rows of the data frame, you can set to a specific number of rows
+
+```{r}
+tail(data)
+tail(data, 3)
+```
+### 4. Lets count the number of rows or columns
+
+##### nrow(): number of rows in a data frame
+```{r}
+nrow(data)
+num_rows<- nrow(data)
+```
+
+
+##### ncol(): number of columns in a data frame
+```{r}
+ncol(data)
+num_columns<- ncol(data)
+```
+
+
+##### length()
+```{r}
+length(data) # count the number of variables
+length(data$Age) # count the number of responses
+```
+
+
+### 5. Lets do a overall summary of the data frame
+ 
+##### summary(): depend on what type of data is in that column / vector
+
+* numeric (as for age, weight, pricing)
+- minimum, 1st quartile, median, mean, 3rd quartile, maximum values
+
+* categorical  (Pet_name, Hair_length, etc)
+- Length, Class, Mode
+
+* logical (New_Client)
+- Count TRUEs and FALSEs, and NAs if present
+
+```{r}
+summary(data)
+```
+
+# Data Cleaning: 
+
+### Why tidy/clean data? 
+
+- Data isn't perfect (NAs)
+- Code beecomes easier to read, to reproduce, and to work with others
+- Makes it easier to interpret and combine with other data
+
+### 1. First,lets first create a smaller data frame that only contains the infos that the clients filled out
+##### select()
+
+```{r}
+# I can select the desired columns and create a new data frame
+data_Client_Info<- data %>% select(Pet_Name, Hair_Length, Weight, New_Client, Pricing, Gender, Breed)
+
+# or I can delete undesired columns from the data frame to create a new data frame
+data_Client_Info_2<- data %>% select(-Mood_Entry, -Mood_Showering, -Mood_Grooming)
+```
+
+### But wait, what is %>%?
+>%>% is called the pipe operator. It provides a method for chaining commands so you can run multiple commands at once instead of doing them one by one. Makes your data cleaner. You could think of it as a conjunction or a comma like in grammar. 
+
+# NA 
+#####  Now, we lets take a look at the data, and identify if the responses are complete. In another word, are there NAs in our data frame
+
+##### NA stands for not available in a dataset.  Missing or undefined data, like blanks in the data
+
+* Removing missing values (known as NA in R) from your data is important for a few reasons:
+
+- Calculations: Many math functions don't work well with missing values.
+
+- Charts: Missing values can mess up your graphs.
+
+- Sorting Data: It's easier to organize your data without missing values.
+
+- Learning from Data: If you're using tools to learn from your data, they usually need complete data to work well.
+
+- Sharing Data: When you share your data with others or use it in different software, missing values can cause problems.
+
+### First step: identify NA
+
+##### 1. We want to know what columns have NA values
+* You have two options:
+- if you have a small data frame, just browse your data and see which columns contains NA
+- if your data frame is much bigger and it takes to long to take notes on the columns containing NAs, we can have R do it for us
+```{r}
+colSums(is.na(data))
+```
+How did this came about? Lets break it apart:
+##### is.na(): check if a value in the vector is NA
+```{r}
+#Let's use variable Age as a example
+data$Age
+is.na (data$Age)
+#The function returns a logical vector, indicating 'TRUE' where the data is 'NA' and 'FALSE' otherwise.
+```
+##### colSums()
+```{r}
+# This function is used to calculate the sum of each column in a matrix or data frame, in this case, we want the number of NAs from the data frame
+colSums(is.na(data))
+# If we are only working with column Age, lets count the number of NA in the column
+sum(is.na(data$Age))
+```
+### Second step: what do we want to do with NA values?
+Now here is a task your boss gave you: I want the average age of the dogs
+```{r}
+data$Age
+mean(data$Age)
+```
+But if we just go in to calculate the average using mean(), it didn't work. Because there are presence of NA in our data!
+
+Now, what if you want to get rid of these pesky 'NA' values? Simple, you can use the na.omit() function.
+
+##### na.omit(): Removes NA
+```{r}
+#Remove NA from the column age
+na_removal_Age <- na.omit(data$Age)
+na_removal_Age
+#Calculate the average once again
+mean_Age_1<-mean(na_removal_Age)
+mean_Age_1
+```
+##### Replacing NA
+Alternatively, you might want to replace 'NA' with a specific value. The boss told you, I want to replace the incomplete NA with 10
+
+```{r}
+# Setting my vector to column Age from data
+na_replace_Age <- data$Age
+# If is.na is True, for the value is NA, it will be replaced with 10
+na_replace_Age [is.na(data$Age)] <- 10
+na_replace_Age
+#Once again,calculate the average
+mean_Age_2<-mean(na_replace_Age)
+mean_Age_2
+```
+
+##### Operation with 'NA' in the data
+
+Let's say you want to calculate the average of these dogs, ignoring the 'NA' values. You can do this by adding a parameter na.rm=TRUE to the mean() function
+
+```{r}
+#use na.rm=TRUE to ignore na is it exist
+mean_Age_3 <-mean(data$Age,na.rm=TRUE)
+mean_Age_3 
+```
+
+### Third step: identify rows, which in our case, individual clients who has incomplete NA. Your boss want you to identify which clients have incomplete information and follow up with them to complete our data
+```{r}
+# Use complete.cases to identify rows with NA values
+# complete.cases returns a logical vector where TRUE indicates rows without NA
+rows_without_na<-complete.cases(data)
+
+# To get rows with NA, you can negate the logical vector. The ! symbol reverses the logical condition, turning TRUE into FALSE 
+rows_with_na <- !rows_without_na
+
+data[rows_with_na, ]
+```
+
+# More data cleaning
+* Functions:
+- filter()
+- arrange()
+- mutate()
+- summarise()
+- group_by()
+- grep()
+```{r}
+# Now you boss want datasets for age under 10 and age including and above 10 because older dogs needs more service time
+Age_above_include10<-data %>% 
+          filter(Age>=10)%>%
+
+# When you created these two data frame, the boss said: "well, I want them to be sorted in ascending order so it is easier for me to find the client's info"
+          arrange(Age)
+Age_above_include10
+
+# The next task the boss gave you is to create another column Years_Above_10 that tells her the dogs actual age - 10,
+Age_above_include10 %>% mutate(Years_Above_10= (Age-10))
+Age_above_include10
+
+# Now that the age column in this dataset is fairly clean, we can start to draw some statistic conclusion using summarise()
+# Mean
+Age_above_include10%>% summarise(mean(Age))
+# Unique values
+Age_above_include10%>% summarise(n_distinct(Age))
+# Median
+Age_above_include10%>% summarise(median(Age)) 
+
+# there are much more than what we did, here is link to [summarise()](https://docs.google.com/document/d/1jvgy0FhBve4CP1QN798KMblIecxZqRDjOLTtiZxmrQ8/edit?usp=sharing)
+
+# Now for the dogs that either is 10 or above, your boss want you to group the data set by gender and count
+# Let's print the column Gender
+Age_above_include10$Gender
+Age_above_include10 %>% 
+  group_by(Gender) %>% 
+  summarise(Count = n())
+
+# Boss want you to give her the average weight of female and male dog to see if males are heavier than females
+# Now that we want to involve other columns, lets clean the NAs in Weight and gender first
+cleaned_Gender_Weight<-Age_above_include10 %>%
+  na.omit(Weight)%>%
+  na.omit(Gender)
+cleaned_Gender_Weight
+average_by_Gender <- cleaned_Gender_Weight %>% 
+  group_by(Gender) %>% 
+  summarise(Avg_weight = mean(Weight))
+average_by_Gender
+
+# Before you go, boss want you to create another data set that contains the information about the dogs mood
+# grep(): can use the pattern you entered to find matching items
+
+# Find columns that start with "Mood_"
+mood_columns <- grep("^Mood_", names(data), value = TRUE)
+mood_columns
+
+mood_data<-data[, mood_columns]
+mood_data
+```
+#If we got through most or all of the content, applause for yourself!
+![My Cat](orca.jpeg)
