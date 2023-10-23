@@ -1,0 +1,1771 @@
+---
+title: "FYP First Pilot 20230120"
+subtitle: "Enna Chen"
+date: '`r Sys.time()`'
+urlcolor: blue # to show hyperlinks in blue when printed as pdf
+
+# edit the output format below
+#output: html_document # use this to render to html
+output: pdf_document # use this to render to pdf
+---
+
+### Load packages 
+
+```{r message=FALSE, results='hide'}
+library(tidyverse)
+library(knitr)
+library(car)
+library(psych)
+library(rcompanion)
+library(dplyr)
+library(ggplot2)
+```
+
+### Load original dataset 
+
+```{r}
+FYPFirstPilotData <- read.csv("FYP First Pilot 20230120.csv", header = TRUE)
+names(FYPFirstPilotData)
+```
+
+### Data wrangling 
+
+```{r}
+
+FYPFirstPilotData <- FYPFirstPilotData[-c(1:6),] # Remove first two rows meta-data + pilot participants who finished before data collection -- will remove other pilot participants later through age filtering (my friends are all under 30 but participants are 30 and 30+)
+FYPFirstPilotData <- FYPFirstPilotData %>% filter(Age >= 30) # We only want people aged 30+ (also getting rid of my pilot friends under 30)
+nrow(FYPFirstPilotData) # 99 participants from Prolific
+
+FYPFirstPilotData <- FYPFirstPilotData %>% dplyr::select(-c(Status, IPAddress, Finished, RecipientLastName, RecipientFirstName, RecipientEmail, ExternalReference, LocationLatitude, LocationLongitude, DistributionChannel, UserLanguage)) # Deleting meta-data
+
+# Create a condition column to specify which condition each person is assigned to
+FYPFirstPilotData <- FYPFirstPilotData %>%
+  mutate(Condition = case_when(
+    NeutralConChoose == 1 | NeutralConChoose == 2 ~ "Neutral",
+    PositiveConChoose == 1 | PositiveConChoose == 2 ~ "Positive",
+    NegativeConChoose == 1 | NegativeConChoose == 2 ~ "Negative"))  
+FYPFirstPilotData$Condition <- as.factor(FYPFirstPilotData$Condition)
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+table(FYPFirstPilotData$Condition) # Neutral N = 33, Positive = 32, Negative = 34
+
+# Create donation choice columns to combine the donation choices of people in all conditions
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(Divide_YoungRelative = ifelse(Condition=='Neutral', NeutralConDivide_1, ifelse(Condition=='Positive', PositiveConDivide_1, ifelse(Condition=='Negative', NegativeConDivide_1, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(Divide_OtherChildren = ifelse(Condition=='Neutral', NeutralConDivide_2, ifelse(Condition=='Positive', PositiveConDivide_2, ifelse(Condition=='Negative', NegativeConDivide_2, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(Choose = ifelse(Condition=='Neutral', NeutralConChoose, ifelse(Condition=='Positive', PositiveConChoose, ifelse(Condition=='Negative', NegativeConChoose, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% dplyr::select(-c(NeutralConDivide_1, PositiveConDivide_1, NegativeConDivide_1, NeutralConDivide_2, PositiveConDivide_2, NegativeConDivide_2, NeutralConChoose, PositiveConChoose, NegativeConChoose)) # Deleting the original uncombined columns
+
+# Create timing columns to combine the timing data of people in all conditions when they are reading the corresponding vignettes
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(AllConFirstClick = ifelse(Condition=='Neutral', VigneAllConNeuTimer_First.Click, ifelse(Condition=='Positive', VigneAllConPosTimer_First.Click, ifelse(Condition=='Negative', VigneAllConNegTimer_First.Click, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(AllConLastClick = ifelse(Condition=='Neutral', VigneAllConNeuTimer_Last.Click, ifelse(Condition=='Positive', VigneAllConPosTimer_Last.Click, ifelse(Condition=='Negative', VigneAllConNegTimer_Last.Click, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(AllConPageSubmit = ifelse(Condition=='Neutral', VigneAllConNeuTimer_Page.Submit, ifelse(Condition=='Positive', VigneAllConPosTimer_Page.Submit, ifelse(Condition=='Negative', VigneAllConNegTimer_Page.Submit, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(AllConClickCount = ifelse(Condition=='Neutral', VigneAllConNeuTimer_Click.Count, ifelse(Condition=='Positive', VigneAllConPosTimer_Click.Count, ifelse(Condition=='Negative', VigneAllConNegTimer_Click.Count, NA)))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(PosNegConFirstClick = ifelse(Condition=='Positive', VignePosConTimer_First.Click, ifelse(Condition=='Negative', VigneNegConTimer_First.Click, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(PosNegConLastClick = ifelse(Condition=='Positive', VignePosConTimer_Last.Click, ifelse(Condition=='Negative', VigneNegConTimer_Last.Click, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(PosNegConPageSubmit = ifelse(Condition=='Positive', VignePosConTimer_Page.Submit, ifelse(Condition=='Negative', VigneNegConTimer_Page.Submit, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(PosNegConClickCount = ifelse(Condition=='Positive', VignePosConTimer_Click.Count, ifelse(Condition=='Negative', VigneNegConTimer_Click.Count, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% dplyr::select(-c(VigneAllConNeuTimer_First.Click, VigneAllConPosTimer_First.Click, VigneAllConNegTimer_First.Click, VigneAllConNeuTimer_Last.Click, VigneAllConPosTimer_Last.Click, VigneAllConNegTimer_Last.Click, VigneAllConNeuTimer_Page.Submit, VigneAllConPosTimer_Page.Submit, VigneAllConNegTimer_Page.Submit, VigneAllConNeuTimer_Click.Count, VigneAllConPosTimer_Click.Count, VigneAllConNegTimer_Click.Count, VignePosConTimer_First.Click, VigneNegConTimer_First.Click, VignePosConTimer_Last.Click, VigneNegConTimer_Last.Click, VignePosConTimer_Page.Submit, VigneNegConTimer_Page.Submit, VignePosConTimer_Click.Count, VigneNegConTimer_Click.Count)) # Deleting the original uncombined columns
+
+# Create order column to specify if participants read the pos or the neg vignette first
+FYPFirstPilotData <- FYPFirstPilotData %>%
+  mutate(Order = case_when(
+    PosNegPersuasive == 1 | PosNegPersuasive == 2 ~ "PosNeg",
+    NegPosPersuasive == 1 | NegPosPersuasive == 2 ~ "NegPos"))  
+FYPFirstPilotData$Order <- as.factor(FYPFirstPilotData$Order)
+FYPFirstPilotData$Order <- factor(FYPFirstPilotData$Order, levels=c('PosNeg', 'NegPos'))
+levels(FYPFirstPilotData$Order)
+table(FYPFirstPilotData$Order) # PosNeg N = 53, NegPos = 46
+
+# Create timing columns to combine the timing data of people in who read either pos first or neg first when comparing both
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(CompareVFirstClick = ifelse(Order=='PosNeg', ReadPosNegTimer_First.Click, ifelse(Order=='NegPos', ReadNegPosTimer_First.Click, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(CompareVLastClick = ifelse(Order=='PosNeg', ReadPosNegTimer_Last.Click, ifelse(Order=='NegPos', ReadNegPosTimer_Last.Click, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(CompareVPageSubmit = ifelse(Order=='PosNeg', ReadPosNegTimer_Page.Submit, ifelse(Order=='NegPos', ReadNegPosTimer_Page.Submit, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(CompareVClickCount = ifelse(Order=='PosNeg', ReadPosNegTimer_Click.Count, ifelse(Order=='NegPos', ReadNegPosTimer_Click.Count, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(Persuasive = ifelse(Order=='PosNeg', PosNegPersuasive, ifelse(Order=='NegPos', NegPosPersuasive, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(PersuasiveReason = ifelse(Order=='PosNeg', PosNegPersuaReason, ifelse(Order=='NegPos', NegPosPersuaReason, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(ValenceComparison = ifelse(Order=='PosNeg', PosNegComparison, ifelse(Order=='NegPos', NegPosComparison, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% group_by(ResponseId) %>% mutate(ValenceFeedback = ifelse(Order=='PosNeg', PosNegValencFeedback, ifelse(Order=='NegPos', NegPosValencFeedback, NA))) %>% ungroup()
+
+FYPFirstPilotData <- FYPFirstPilotData %>% dplyr::select(-c(ReadPosNegTimer_First.Click, ReadNegPosTimer_First.Click, ReadPosNegTimer_Last.Click, ReadNegPosTimer_Last.Click, ReadPosNegTimer_Page.Submit, ReadNegPosTimer_Page.Submit, ReadPosNegTimer_Click.Count, ReadNegPosTimer_Click.Count, PosNegPersuasive, NegPosPersuasive, PosNegPersuaReason, NegPosPersuaReason, PosNegComparison, NegPosComparison, PosNegValencFeedback, NegPosValencFeedback)) # Deleting the original uncombined columns
+
+# Rename annoying variables
+names(FYPFirstPilotData)[names(FYPFirstPilotData) == "Duration..in.seconds."] <- "DurationInSeconds" 
+names(FYPFirstPilotData)[names(FYPFirstPilotData) == "Gender_3_TEXT"] <- "Gender_Explain"
+names(FYPFirstPilotData)[names(FYPFirstPilotData) == "Ethnicity_8_TEXT"] <- "Ethnicity_Explain"
+names(FYPFirstPilotData)[names(FYPFirstPilotData) == "MaritalStatus_6_TEXT"] <- "MaritalStatus_Explain"
+names(FYPFirstPilotData)[names(FYPFirstPilotData) == "PoliticalAffiliation_4_TEXT"] <- "PoliticalAffiliation_Explain"
+
+# Change all the emotion variables to be numeric 
+a <- which(colnames(FYPFirstPilotData)=="Emo_Positive")
+b <- which(colnames(FYPFirstPilotData)=="Emo_Interested")
+FYPFirstPilotData[, c(a:b)] <- sapply(FYPFirstPilotData[, c(a:b)], as.numeric)
+
+# Create overall positive emotion and overall negative emotion variables
+FYPFirstPilotData$Emo_All_Negative <- rowMeans(FYPFirstPilotData[c('Emo_Sad', 'Emo_Guilty', 'Emo_Ashamed', 'Emo_Angry', 'Emo_Bored', 'Emo_Anxious', 'Emo_Frustrated')], na.rm=F)
+FYPFirstPilotData$Emo_All_Positive <- rowMeans(FYPFirstPilotData[c('Emo_Happy', 'Emo_Content', 'Emo_Interested')], na.rm=F)
+
+# Create subjective and actual age difference variable
+FYPFirstPilotData$Age <-sapply(FYPFirstPilotData$Age, as.numeric)
+FYPFirstPilotData$SubjectiveAge <-sapply(FYPFirstPilotData$SubjectiveAge, as.numeric)
+FYPFirstPilotData$Diff_Sub_Actual_Age <- FYPFirstPilotData$SubjectiveAge - FYPFirstPilotData$Age
+
+write.csv(FYPFirstPilotData, "FYPFirstPilotData_Cleaned_20230305.csv", row.names = FALSE)
+
+```
+
+### Load cleaned dataset 
+
+```{r}
+FYPFirstPilotData <- read.csv("FYPFirstPilotData_Cleaned_20230303.csv", header = TRUE)
+names(FYPFirstPilotData)
+```
+
+### 20230130 ADDITION: more exclusion criteria proposed by Laura
+
+```{r}
+
+table(FYPFirstPilotData$Condition) # Neg: 34, Neu: 33, Pos: 32, Tot: 99
+
+# Note that all the exclusion sample size listed below are not additive. For example, 53 people are left when we filted out those who do not have younger relatives directly from the original dataset, not after excluding people who did not understand the vignette and question.
+
+# Exclude people who did not understand the vignette and question
+FYPFirstPilotData <- filter(FYPFirstPilotData, VignetteUnderstand == 1)  
+table(FYPFirstPilotData$Condition) # Neg: 33, Neu: 31, Pos: 32, Tot: 96
+
+# Exclude people who have no children
+#FYPFirstPilotData <- filter(FYPFirstPilotData, Children != 0)  
+#table(FYPFirstPilotData$Condition) # Neg: 19, Neu: 22, Pos: 13, Tot: 54
+
+# Exclude people who have no younger relatives (apparently some people said 0 here but have younger children, so I changed in questionnaire to say "including your children")
+#FYPFirstPilotData <- filter(FYPFirstPilotData, YoungRelatives != 0)  
+#table(FYPFirstPilotData$Condition) # Neg: 19, Neu: 18, Pos: 16, Tot: 53
+
+# Exclude people who have no children NOR younger relatives
+FYPFirstPilotData <- filter(FYPFirstPilotData, Children+YoungRelatives != 0)  
+table(FYPFirstPilotData$Condition) # Neg: 27, Neu: 25, Pos: 23, Tot: 75
+
+# Exclude people who took less than 7 minutes or more than 30 minutes 
+FYPFirstPilotData <- filter(FYPFirstPilotData, DurationInSeconds >= 420 & DurationInSeconds <= 1800)
+table(FYPFirstPilotData$Condition) # Neg: 31, Neu: 26, Pos: 26, Tot: 83
+
+# Exclude people who are younger than 40
+FYPFirstPilotData <- filter(FYPFirstPilotData, Age >= 40)
+table(FYPFirstPilotData$Condition) # Neg: 28, Neu: 24, Pos: 24, Tot: 76
+
+# Exclude people who think the positive vignette is more negative than the negative vignette  
+FYPFirstPilotData <- filter(FYPFirstPilotData, ValenceComparison <= 4)
+table(FYPFirstPilotData$Condition) # Neg: 34, Neu: 31, Pos: 32, Tot: 97
+
+# In the end, I decided to use the following criteria for exclusion (additive criteria)
+# Exclude people who did not understand the vignette and question
+# Exclude people who have no children NOR younger relatives
+# Exclude people who took less than 7 minutes or more than 30 minutes 
+# Exclude people who are younger than 40
+# Exclude people who think the positive vignette is more negative than the negative vignette  
+# I end up having neg: 19, neu: 16, pos: 18, tot: 53
+
+```
+
+### Main graphs and main analyses: WITH ACTUAL AGE
+
+1. Divide money between fam and non-fam
+
+```{r}
+
+# Make sure everyone divided 1000 between family and non-family, get rid of those who didn't follow instruction
+FYPFirstPilotData$DivideSum <- FYPFirstPilotData$Divide_YoungRelative + FYPFirstPilotData$Divide_OtherChildren
+FYPFirstPilotData1000 <- FYPFirstPilotData %>% 
+  filter(DivideSum == 1000)
+
+table(FYPFirstPilotData1000$Condition) # Neutral N = 32 (1 person eliminated), Positive = 30 (2 people eliminated), Negative = 34
+
+# Plot of amount to divide to poor children 
+ggplot(data = FYPFirstPilotData1000, mapping = aes(x = Age, y = Divide_OtherChildren)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  geom_hline(yintercept = 500, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Amount to give to other children out of 1000", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression (divide to other children): (marginally sig) more people in pos condition choose to give more to poor children compared to people in neutral condition; people in neg condition are not significantly different from either pos or neutral conditions
+
+FYPFirstPilotData1000$Condition <- as.factor(FYPFirstPilotData1000$Condition)
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_neutral_cononly)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(glm_divide_neutral)
+
+# use lm to get R^2
+lm_divide_neutral <- lm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(lm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_positive_cononly)
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(glm_divide_positive)
+
+# use lm to get R^2
+lm_divide_positive <- lm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(lm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_negative_cononly)
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(glm_divide_negative)
+
+# use lm to get R^2
+lm_divide_negative <- lm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition)
+summary(lm_divide_negative)
+
+lm1_divide_negative <- lm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)+Condition)
+summary(lm1_divide_negative)
+# adjust r^2 is 0.11 here, but 0.15 in the previous model
+# the effect size of interaction is 0.15-0.11 = 0.0373
+# then we use partial r^2 to calculate f^2 in g*power
+# 2 tailed, alpha = 0.05, power = 0.80
+# do the same with covariates models
+
+# not counting for neutral condition
+lm_divide_negative <- lm(data = FYPFirstPilotData1000 %>% filter(Condition != 'Neutral'), Divide_OtherChildren~scale(Age)*Condition)
+summary(lm_divide_negative)
+
+lm1_divide_negative <- lm(data = FYPFirstPilotData1000 %>% filter(Condition != 'Neutral'), Divide_OtherChildren~scale(Age)+Condition)
+summary(lm1_divide_negative)
+# the effect size of interaction is 0.11-0.08 = 0.03203
+# check all the effect sizes and find the smallest effect size and use that 
+
+# remove participants from the neutral condition 
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_divide_AllCon <- glm(data = FYPFirstPilotData, Divide_OtherChildren~scale(Age))
+summary(glm_divide_AllCon)
+
+PosCon <- subset(FYPFirstPilotData, Condition == "Positive")
+glm_divide_PosCon <- glm(data = PosCon, Divide_OtherChildren~scale(Age))
+summary(glm_divide_PosCon)
+
+NegCon <- subset(FYPFirstPilotData, Condition == "Negative")
+glm_divide_NegCon <- glm(data = NegCon, Divide_OtherChildren~scale(Age))
+summary(glm_divide_NegCon)
+
+NeuCon <- subset(FYPFirstPilotData, Condition == "Neutral")
+glm_divide_NeuCon <- glm(data = NeuCon, Divide_OtherChildren~scale(Age))
+summary(glm_divide_NeuCon)
+
+```
+
+2. Give all money to fam or non-fam
+
+```{r}
+
+# Recode the choose question so that if participants choose 1 is to give all to the child, and if they choose 0 is to give all to younger family
+FYPFirstPilotData$Choose <- car::recode(FYPFirstPilotData$Choose, "1 = 0; 2 = 1")
+
+# Plot of likelihood of choose to give all to poor children 
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Choose)) +
+  geom_point(alpha = 0.2, position = position_jitter(height = 0.03)) + 
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), color="black") + 
+  geom_hline(yintercept = 0.5, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Choose to give all to poor children", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Logistic regression: more people in pos condition choose to give all to poor children compared to people in neutral condition; people in neg condition are not significantly different from either pos or neutral conditions
+
+FYPFirstPilotData$Condition <- as.factor(FYPFirstPilotData$Condition)
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_neutral_cononly)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_positive_cononly)
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_negative_cononly)
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition, family = "binomial")
+summary(glm_choose_negative)
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_choose_AllCon <- glm(data = FYPFirstPilotData, Choose~scale(Age), family = "binomial")
+summary(glm_choose_AllCon)
+
+glm_choose_PosCon <- glm(data = PosCon, Choose~scale(Age), family = "binomial")
+summary(glm_choose_PosCon)
+
+glm_choose_NegCon <- glm(data = NegCon, Choose~scale(Age), family = "binomial")
+summary(glm_choose_NegCon)
+
+glm_choose_NeuCon <- glm(data = NeuCon, Choose~scale(Age), family = "binomial")
+summary(glm_choose_NeuCon)
+
+```
+
+### Main graphs and main analyses: WITH SUBJECTIVE AGE
+
+1. Divide money between fam and non-fam
+
+```{r}
+
+# Plot of amount to divide to poor children 
+ggplot(data = FYPFirstPilotData1000, mapping = aes(x = SubjectiveAge, y = Divide_OtherChildren)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  geom_hline(yintercept = 500, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Amount to give to other children out of 1000", x = "SubjectiveAge") + 
+  facet_grid(.~Condition)
+
+# Linear regression (divide to other children): (marginally sig) more people in pos condition choose to give more to poor children compared to people in neutral condition; people in neg condition are not significantly different from either pos or neutral conditions
+
+FYPFirstPilotData1000$Condition <- as.factor(FYPFirstPilotData1000$Condition)
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_neutral_cononly)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(SubjectiveAge)*Condition)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_positive_cononly)
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(SubjectiveAge)*Condition)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_negative_cononly)
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(SubjectiveAge)*Condition)
+summary(glm_divide_negative)
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_divide_AllCon <- glm(data = FYPFirstPilotData, Divide_OtherChildren~scale(SubjectiveAge))
+summary(glm_divide_AllCon)
+
+glm_divide_PosCon <- glm(data = PosCon, Divide_OtherChildren~scale(SubjectiveAge))
+summary(glm_divide_PosCon)
+
+glm_divide_NegCon <- glm(data = NegCon, Divide_OtherChildren~scale(SubjectiveAge))
+summary(glm_divide_NegCon)
+
+NeuCon <- subset(FYPFirstPilotData, Condition == "Neutral")
+glm_divide_NeuCon <- glm(data = NeuCon, Divide_OtherChildren~scale(SubjectiveAge))
+summary(glm_divide_NeuCon)
+
+```
+
+2. Give all money to fam or non-fam
+
+```{r}
+
+# Plot of likelihood of choose to give all to poor children 
+ggplot(data = FYPFirstPilotData, mapping = aes(x = SubjectiveAge, y = Choose)) +
+  geom_point(alpha = 0.2, position = position_jitter(height = 0.03)) + 
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), color="black") + 
+  geom_hline(yintercept = 0.5, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Choose to give all to poor children", x = "SubjectiveAge") + 
+  facet_grid(.~Condition)
+
+# Logistic regression: more people in pos condition choose to give all to poor children compared to people in neutral condition; people in neg condition are not significantly different from either pos or neutral conditions
+
+FYPFirstPilotData$Condition <- as.factor(FYPFirstPilotData$Condition)
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_neutral_cononly)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(SubjectiveAge)*Condition, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_positive_cononly)
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(SubjectiveAge)*Condition, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_negative_cononly)
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(SubjectiveAge)*Condition, family = "binomial")
+summary(glm_choose_negative)
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_choose_AllCon <- glm(data = FYPFirstPilotData, Choose~scale(SubjectiveAge), family = "binomial")
+summary(glm_choose_AllCon)
+
+glm_choose_PosCon <- glm(data = PosCon, Choose~scale(SubjectiveAge), family = "binomial")
+summary(glm_choose_PosCon)
+
+glm_choose_NegCon <- glm(data = NegCon, Choose~scale(SubjectiveAge), family = "binomial")
+summary(glm_choose_NegCon)
+
+glm_choose_NeuCon <- glm(data = NeuCon, Choose~scale(SubjectiveAge), family = "binomial")
+summary(glm_choose_NeuCon)
+
+```
+
+### Main graphs and main analyses: WITH SUBJECTIVE - ACTUAL AGE
+
+1. Divide money between fam and non-fam
+
+```{r}
+
+# Plot of amount to divide to poor children 
+ggplot(data = FYPFirstPilotData1000, mapping = aes(x = Diff_Sub_Actual_Age, y = Divide_OtherChildren)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  geom_hline(yintercept = 500, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Amount to give to other children out of 1000", x = "Subjective - Actual Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression (divide to other children): 
+
+FYPFirstPilotData1000$Condition <- as.factor(FYPFirstPilotData1000$Condition)
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_neutral_cononly)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Diff_Sub_Actual_Age)*Condition)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_positive_cononly)
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Diff_Sub_Actual_Age)*Condition)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative_cononly <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Condition)
+summary(glm_divide_negative_cononly)
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Diff_Sub_Actual_Age)*Condition)
+summary(glm_divide_negative)
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_divide_AllCon <- glm(data = FYPFirstPilotData, Divide_OtherChildren~scale(Diff_Sub_Actual_Age))
+summary(glm_divide_AllCon)
+
+glm_divide_PosCon <- glm(data = PosCon, Divide_OtherChildren~scale(Diff_Sub_Actual_Age))
+summary(glm_divide_PosCon)
+
+glm_divide_NegCon <- glm(data = NegCon, Divide_OtherChildren~scale(Diff_Sub_Actual_Age))
+summary(glm_divide_NegCon)
+
+NeuCon <- subset(FYPFirstPilotData, Condition == "Neutral")
+glm_divide_NeuCon <- glm(data = NeuCon, Divide_OtherChildren~scale(Diff_Sub_Actual_Age))
+summary(glm_divide_NeuCon)
+
+```
+
+2. Give all money to fam or non-fam
+
+```{r}
+
+# Plot of likelihood of choose to give all to poor children 
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Diff_Sub_Actual_Age, y = Choose)) +
+  geom_point(alpha = 0.2, position = position_jitter(height = 0.03)) + 
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), color="black") + 
+  geom_hline(yintercept = 0.5, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Choose to give all to poor children", x = "Subjective - Actual Age") + 
+  facet_grid(.~Condition)
+
+# Logistic regression: 
+
+FYPFirstPilotData$Condition <- as.factor(FYPFirstPilotData$Condition)
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_neutral_cononly)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Diff_Sub_Actual_Age)*Condition, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_positive_cononly)
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Diff_Sub_Actual_Age)*Condition, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative_cononly <- glm(data = FYPFirstPilotData, Choose~Condition, family = "binomial")
+summary(glm_choose_negative_cononly)
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Diff_Sub_Actual_Age)*Condition, family = "binomial")
+summary(glm_choose_negative)
+
+# Use subset to look at whether people in pos/neg/neu would give all to poor children
+
+glm_choose_AllCon <- glm(data = FYPFirstPilotData, Choose~scale(Diff_Sub_Actual_Age), family = "binomial")
+summary(glm_choose_AllCon)
+
+glm_choose_PosCon <- glm(data = PosCon, Choose~scale(Diff_Sub_Actual_Age), family = "binomial")
+summary(glm_choose_PosCon)
+
+glm_choose_NegCon <- glm(data = NegCon, Choose~scale(Diff_Sub_Actual_Age), family = "binomial")
+summary(glm_choose_NegCon)
+
+glm_choose_NeuCon <- glm(data = NeuCon, Choose~scale(Diff_Sub_Actual_Age), family = "binomial")
+summary(glm_choose_NeuCon)
+
+```
+
+### Manipulation check graphs and analyses: everything but emotion
+
+1. When comparing pos vs. neg, is positive vignette more persuasive
+
+```{r}
+
+# Recode the persuasive question so that if participants choose 1 is thinking positive one more persuasive, and if they choose 2 is thinking negative one more persuasive
+
+FYPFirstPilotData$Persuasive <- car::recode(FYPFirstPilotData$Persuasive, "1 = 1; 2 = 0")
+
+# Plot of think positive vignette is more persuasive
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Persuasive)) +
+  geom_point(alpha = 0.2, position = position_jitter(height = 0.03)) + 
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), color="black") + 
+  geom_hline(yintercept = 0.5, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think positive vignette is more persuasive'", x = "Age") + 
+  facet_grid(.~Order)
+
+# Logistic regression: older participants think pos is more persuasive but only when negpos is the reference level (is this the correct interpretation)
+
+FYPFirstPilotData$Order <- as.factor(FYPFirstPilotData$Order)
+FYPFirstPilotData$Order <- factor(FYPFirstPilotData$Order, levels=c('PosNeg', 'NegPos'))
+levels(FYPFirstPilotData$Order)
+glm_persuasive_PosNeg <- glm(data = FYPFirstPilotData, Persuasive~scale(Age)*Order, family = "binomial")
+summary(glm_persuasive_PosNeg)
+
+FYPFirstPilotData$Order <- factor(FYPFirstPilotData$Order, levels=c('NegPos', 'PosNeg'))
+glm_persuasive_NegPos <- glm(data = FYPFirstPilotData, Persuasive~scale(Age)*Order, family = "binomial")
+summary(glm_persuasive_NegPos)
+
+# Use subset to look at age difference in posneg order and negpos order and both orders
+
+glm_persuasive_BothOrders <- glm(data = FYPFirstPilotData, Persuasive~scale(Age))
+summary(glm_persuasive_BothOrders)
+
+NegPosOrder <- subset(FYPFirstPilotData, Order == "NegPos")
+glm_persuasive_NegPosOrder <- glm(data = NegPosOrder, Persuasive~scale(Age))
+summary(glm_persuasive_NegPosOrder)
+
+PosNegOrder <- subset(FYPFirstPilotData, Order == "PosNeg")
+glm_persuasive_PosNegOrder <- glm(data = PosNegOrder, Persuasive~scale(Age))
+summary(glm_persuasive_PosNegOrder)
+
+```
+
+2. When comparing pos vs. neg, is the positive vignette more positive than the negative vignette
+
+```{r}
+
+# Recode the valence question so that if participants choose 7 is thinking positive vignette is significantly more positive than negative vignette, and choose 1 is thinking positive vignette is significantly more negative than negative vignette (which should not be possible)
+
+FYPFirstPilotData$ValenceComparison <- car::recode(FYPFirstPilotData$ValenceComparison, "1 = 7; 2 = 6; 3 = 5; 4 = 4; 5 = 3; 6 = 2; 7 = 1")
+
+# Plot of valence comparison between pos and neg vignettes
+
+ggplot(data = FYPFirstPilotData,
+       mapping = aes(x = Age,
+                     y = ValenceComparison)) +
+  geom_point(alpha = 0.5) + 
+  geom_hline(yintercept = 4, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think positive vignette is more positive than negative vignette", x = "Age") + 
+  facet_grid(.~Order)
+
+```
+
+3. When assigned randomly to neutral, pos, neg conditions, how much time did people spend on reading the vignettes
+
+```{r}
+
+# Plot of amount of time spent on the neutral vignette page in all three conditions -- need to deal with outliers (most likely someone who paused half way the survey and came back)
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = AllConPageSubmit)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Time spent on reading the neutral vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Plot of amount of time spent on the pos/neg vignette page in both conditions -- need to deal with outliers (most likely someone who paused half way the survey and came back)
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = PosNegConPageSubmit)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Time spent on reading the positive or negative vignette'", x = "Age") + 
+  facet_grid(.~Condition)
+
+```
+
+4. When assigned randomly to neutral, pos, neg conditions, how positive do people think about their vignettes
+
+```{r}
+
+# Whichever condition you were assigned to, how positive did you think about your vignette
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = VigneRat_Positive)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think your vignette is positive", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_eval_pos_neutral <- glm(data = FYPFirstPilotData, VigneRat_Positive~scale(Age)*Condition)
+summary(glm_eval_pos_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_eval_pos_positive <- glm(data = FYPFirstPilotData, VigneRat_Positive~scale(Age)*Condition)
+summary(glm_eval_pos_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_eval_pos_negative <- glm(data = FYPFirstPilotData, VigneRat_Positive~scale(Age)*Condition)
+summary(glm_eval_pos_negative)
+
+glm_eval_pos_AllCon <- glm(data = FYPFirstPilotData, VigneRat_Positive~scale(Age))
+summary(glm_eval_pos_AllCon)
+
+glm_eval_pos_PosCon <- glm(data = PosCon, VigneRat_Positive~scale(Age))
+summary(glm_eval_pos_PosCon)
+
+glm_eval_pos_NegCon <- glm(data = NegCon, VigneRat_Positive~scale(Age))
+summary(glm_eval_pos_NegCon)
+
+glm_eval_pos_NeuCon <- glm(data = NeuCon, VigneRat_Positive~scale(Age))
+summary(glm_eval_pos_NeuCon)
+
+```
+
+5. When assigned randomly to neutral, pos, neg conditions, how negative do people think about their vignettes
+
+```{r}
+
+# Whichever condition you were assigned to, how negative did you think about your vignette
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = VigneRat_Negative)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think your vignette is negative", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_eval_neg_neutral <- glm(data = FYPFirstPilotData, VigneRat_Negative~scale(Age)*Condition)
+summary(glm_eval_neg_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_eval_neg_positive <- glm(data = FYPFirstPilotData, VigneRat_Negative~scale(Age)*Condition)
+summary(glm_eval_neg_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_eval_neg_negative <- glm(data = FYPFirstPilotData, VigneRat_Negative~scale(Age)*Condition)
+summary(glm_eval_neg_negative)
+
+glm_eval_neg_AllCon <- glm(data = FYPFirstPilotData, VigneRat_Negative~scale(Age))
+summary(glm_eval_neg_AllCon)
+
+glm_eval_neg_PosCon <- glm(data = PosCon, VigneRat_Negative~scale(Age))
+summary(glm_eval_neg_PosCon)
+
+glm_eval_neg_NegCon <- glm(data = NegCon, VigneRat_Negative~scale(Age))
+summary(glm_eval_neg_NegCon)
+
+glm_eval_neg_NeuCon <- glm(data = NeuCon, VigneRat_Negative~scale(Age))
+summary(glm_eval_neg_NeuCon)
+
+```
+
+6. When assigned randomly to neutral, pos, neg conditions, how personally relevant do people think about their vignettes
+
+```{r}
+
+# Whichever condition you were assigned to, how personally relevant did you think about your vignette
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = VigneRat_PersonRelevant)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think your vignette is personally relevant", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_eval_person_neutral <- glm(data = FYPFirstPilotData, VigneRat_PersonRelevant~scale(Age)*Condition)
+summary(glm_eval_person_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_eval_person_positive <- glm(data = FYPFirstPilotData, VigneRat_PersonRelevant~scale(Age)*Condition)
+summary(glm_eval_person_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_eval_person_negative <- glm(data = FYPFirstPilotData, VigneRat_PersonRelevant~scale(Age)*Condition)
+summary(glm_eval_person_negative)
+
+glm_eval_person_AllCon <- glm(data = FYPFirstPilotData, VigneRat_PersonRelevant~scale(Age))
+summary(glm_eval_person_AllCon)
+
+glm_eval_person_PosCon <- glm(data = PosCon, VigneRat_PersonRelevant~scale(Age))
+summary(glm_eval_person_PosCon)
+
+glm_eval_person_NegCon <- glm(data = NegCon, VigneRat_PersonRelevant~scale(Age))
+summary(glm_eval_person_NegCon)
+
+glm_eval_person_NeuCon <- glm(data = NeuCon, VigneRat_PersonRelevant~scale(Age))
+summary(glm_eval_person_NeuCon)
+
+```
+
+7. When assigned randomly to neutral, pos, neg conditions, how meaningful do people think about their vignettes
+
+```{r}
+
+# Whichever condition you were assigned to, how meaningful did you think about your vignette
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = VigneRat_Meaningful)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think your vignette is meaningful", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_eval_meaning_neutral <- glm(data = FYPFirstPilotData, VigneRat_Meaningful~scale(Age)*Condition)
+summary(glm_eval_meaning_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_eval_meaning_positive <- glm(data = FYPFirstPilotData, VigneRat_Meaningful~scale(Age)*Condition)
+summary(glm_eval_meaning_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_eval_meaning_negative <- glm(data = FYPFirstPilotData, VigneRat_Meaningful~scale(Age)*Condition)
+summary(glm_eval_meaning_negative)
+
+glm_eval_meaning_AllCon <- glm(data = FYPFirstPilotData, VigneRat_Meaningful~scale(Age))
+summary(glm_eval_meaning_AllCon)
+
+glm_eval_meaning_PosCon <- glm(data = PosCon, VigneRat_Meaningful~scale(Age))
+summary(glm_eval_meaning_PosCon)
+
+glm_eval_meaning_NegCon <- glm(data = NegCon, VigneRat_Meaningful~scale(Age))
+summary(glm_eval_meaning_NegCon)
+
+glm_eval_meaning_NeuCon <- glm(data = NeuCon, VigneRat_Meaningful~scale(Age))
+summary(glm_eval_meaning_NeuCon)
+
+```
+
+8. When assigned randomly to neutral, pos, neg conditions, how dire do people think about their vignettes
+
+```{r}
+
+# Whichever condition you were assigned to, how dire did you think about your vignette
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = VigneRat_Dire)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Think your vignette is dire", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_eval_dire_neutral <- glm(data = FYPFirstPilotData, VigneRat_Dire~scale(Age)*Condition)
+summary(glm_eval_dire_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_eval_dire_positive <- glm(data = FYPFirstPilotData, VigneRat_Dire~scale(Age)*Condition)
+summary(glm_eval_dire_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_eval_dire_negative <- glm(data = FYPFirstPilotData, VigneRat_Dire~scale(Age)*Condition)
+summary(glm_eval_dire_negative)
+
+glm_eval_dire_AllCon <- glm(data = FYPFirstPilotData, VigneRat_Dire~scale(Age))
+summary(glm_eval_dire_AllCon)
+
+glm_eval_dire_PosCon <- glm(data = PosCon, VigneRat_Dire~scale(Age))
+summary(glm_eval_dire_PosCon)
+
+glm_eval_dire_NegCon <- glm(data = NegCon, VigneRat_Dire~scale(Age))
+summary(glm_eval_dire_NegCon)
+
+glm_eval_dire_NeuCon <- glm(data = NeuCon, VigneRat_Dire~scale(Age))
+summary(glm_eval_dire_NeuCon)
+
+```
+
+### Manipulation check graphs and analyses: emotion
+
+1. When assigned randomly to neutral, pos, neg conditions, how positive did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Positive)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel positive after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_pos_neutral <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_pos_positive <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_pos_negative <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_negative)
+
+glm_feel_pos_AllCon <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age))
+summary(glm_feel_pos_AllCon)
+
+glm_feel_pos_PosCon <- glm(data = PosCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_PosCon)
+
+glm_feel_pos_NegCon <- glm(data = NegCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_NegCon)
+
+glm_feel_pos_NeuCon <- glm(data = NeuCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_NeuCon)
+
+```
+
+2. When assigned randomly to neutral, pos, neg conditions, how negative did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Negative)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel negative after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_neg_neutral <- glm(data = FYPFirstPilotData, Emo_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_neg_positive <- glm(data = FYPFirstPilotData, Emo_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_neg_negative <- glm(data = FYPFirstPilotData, Emo_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_negative)
+
+glm_feel_neg_AllCon <- glm(data = FYPFirstPilotData, Emo_Negative~scale(Age))
+summary(glm_feel_neg_AllCon)
+
+glm_feel_neg_PosCon <- glm(data = PosCon, Emo_Negative~scale(Age))
+summary(glm_feel_neg_PosCon)
+
+glm_feel_neg_NegCon <- glm(data = NegCon, Emo_Negative~scale(Age))
+summary(glm_feel_neg_NegCon)
+
+glm_feel_neg_NeuCon <- glm(data = NeuCon, Emo_Negative~scale(Age))
+summary(glm_feel_neg_NeuCon)
+
+```
+
+3. When assigned randomly to neutral, pos, neg conditions, how happy did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Happy)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel happy after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_happy_neutral <- glm(data = FYPFirstPilotData, Emo_Happy~scale(Age)*Condition)
+summary(glm_feel_happy_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_happy_positive <- glm(data = FYPFirstPilotData, Emo_Happy~scale(Age)*Condition)
+summary(glm_feel_happy_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_happy_negative <- glm(data = FYPFirstPilotData, Emo_Happy~scale(Age)*Condition)
+summary(glm_feel_happy_negative)
+
+glm_feel_happy_AllCon <- glm(data = FYPFirstPilotData, Emo_Happy~scale(Age))
+summary(glm_feel_happy_AllCon)
+
+glm_feel_happy_PosCon <- glm(data = PosCon, Emo_Happy~scale(Age))
+summary(glm_feel_happy_PosCon)
+
+glm_feel_happy_NegCon <- glm(data = NegCon, Emo_Happy~scale(Age))
+summary(glm_feel_happy_NegCon)
+
+glm_feel_happy_NeuCon <- glm(data = NeuCon, Emo_Happy~scale(Age))
+summary(glm_feel_happy_NeuCon)
+
+```
+
+4. When assigned randomly to neutral, pos, neg conditions, how sad did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Sad)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel sad after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_sad_neutral <- glm(data = FYPFirstPilotData, Emo_Sad~scale(Age)*Condition)
+summary(glm_feel_sad_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_sad_positive <- glm(data = FYPFirstPilotData, Emo_Sad~scale(Age)*Condition)
+summary(glm_feel_sad_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_sad_negative <- glm(data = FYPFirstPilotData, Emo_Sad~scale(Age)*Condition)
+summary(glm_feel_sad_negative)
+
+glm_feel_sad_AllCon <- glm(data = FYPFirstPilotData, Emo_Sad~scale(Age))
+summary(glm_feel_sad_AllCon)
+
+glm_feel_sad_PosCon <- glm(data = PosCon, Emo_Sad~scale(Age))
+summary(glm_feel_sad_PosCon)
+
+glm_feel_sad_NegCon <- glm(data = NegCon, Emo_Sad~scale(Age))
+summary(glm_feel_sad_NegCon)
+
+glm_feel_sad_NeuCon <- glm(data = NeuCon, Emo_Sad~scale(Age))
+summary(glm_feel_sad_NeuCon)
+
+```
+
+5. When assigned randomly to neutral, pos, neg conditions, how guilty did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Guilty)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel guilty after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_guilty_neutral <- glm(data = FYPFirstPilotData, Emo_Guilty~scale(Age)*Condition)
+summary(glm_feel_guilty_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_guilty_positive <- glm(data = FYPFirstPilotData, Emo_Guilty~scale(Age)*Condition)
+summary(glm_feel_guilty_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_guilty_negative <- glm(data = FYPFirstPilotData, Emo_Guilty~scale(Age)*Condition)
+summary(glm_feel_guilty_negative)
+
+glm_feel_guilty_AllCon <- glm(data = FYPFirstPilotData, Emo_Guilty~scale(Age))
+summary(glm_feel_guilty_AllCon)
+
+glm_feel_guilty_PosCon <- glm(data = PosCon, Emo_Guilty~scale(Age))
+summary(glm_feel_guilty_PosCon)
+
+glm_feel_guilty_NegCon <- glm(data = NegCon, Emo_Guilty~scale(Age))
+summary(glm_feel_guilty_NegCon)
+
+glm_feel_guilty_NeuCon <- glm(data = NeuCon, Emo_Guilty~scale(Age))
+summary(glm_feel_guilty_NeuCon)
+
+```
+
+6. When assigned randomly to neutral, pos, neg conditions, how ashamed did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Ashamed)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel ashamed after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_ashamed_neutral <- glm(data = FYPFirstPilotData, Emo_Ashamed~scale(Age)*Condition)
+summary(glm_feel_ashamed_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_ashamed_positive <- glm(data = FYPFirstPilotData, Emo_Ashamed~scale(Age)*Condition)
+summary(glm_feel_ashamed_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_ashamed_negative <- glm(data = FYPFirstPilotData, Emo_Ashamed~scale(Age)*Condition)
+summary(glm_feel_ashamed_negative)
+
+glm_feel_ashamed_AllCon <- glm(data = FYPFirstPilotData, Emo_Ashamed~scale(Age))
+summary(glm_feel_ashamed_AllCon)
+
+glm_feel_ashamed_PosCon <- glm(data = PosCon, Emo_Ashamed~scale(Age))
+summary(glm_feel_ashamed_PosCon)
+
+glm_feel_ashamed_NegCon <- glm(data = NegCon, Emo_Ashamed~scale(Age))
+summary(glm_feel_ashamed_NegCon)
+
+glm_feel_ashamed_NeuCon <- glm(data = NeuCon, Emo_Ashamed~scale(Age))
+summary(glm_feel_ashamed_NeuCon)
+
+```
+
+7. When assigned randomly to neutral, pos, neg conditions, how angry did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Angry)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel angry after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_angry_neutral <- glm(data = FYPFirstPilotData, Emo_Angry~scale(Age)*Condition)
+summary(glm_feel_angry_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_angry_positive <- glm(data = FYPFirstPilotData, Emo_Angry~scale(Age)*Condition)
+summary(glm_feel_angry_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_angry_negative <- glm(data = FYPFirstPilotData, Emo_Angry~scale(Age)*Condition)
+summary(glm_feel_angry_negative)
+
+glm_feel_angry_AllCon <- glm(data = FYPFirstPilotData, Emo_Angry~scale(Age))
+summary(glm_feel_angry_AllCon)
+
+glm_feel_angry_PosCon <- glm(data = PosCon, Emo_Angry~scale(Age))
+summary(glm_feel_angry_PosCon)
+
+glm_feel_angry_NegCon <- glm(data = NegCon, Emo_Angry~scale(Age))
+summary(glm_feel_angry_NegCon)
+
+glm_feel_angry_NeuCon <- glm(data = NeuCon, Emo_Angry~scale(Age))
+summary(glm_feel_angry_NeuCon)
+
+```
+
+8. When assigned randomly to neutral, pos, neg conditions, how content did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Content)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel content after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_content_neutral <- glm(data = FYPFirstPilotData, Emo_Content~scale(Age)*Condition)
+summary(glm_feel_content_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_content_positive <- glm(data = FYPFirstPilotData, Emo_Content~scale(Age)*Condition)
+summary(glm_feel_content_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_content_negative <- glm(data = FYPFirstPilotData, Emo_Content~scale(Age)*Condition)
+summary(glm_feel_content_negative)
+
+glm_feel_content_AllCon <- glm(data = FYPFirstPilotData, Emo_Content~scale(Age))
+summary(glm_feel_content_AllCon)
+
+glm_feel_content_PosCon <- glm(data = PosCon, Emo_Content~scale(Age))
+summary(glm_feel_content_PosCon)
+
+glm_feel_content_NegCon <- glm(data = NegCon, Emo_Content~scale(Age))
+summary(glm_feel_content_NegCon)
+
+glm_feel_content_NeuCon <- glm(data = NeuCon, Emo_Content~scale(Age))
+summary(glm_feel_content_NeuCon)
+
+```
+
+9. When assigned randomly to neutral, pos, neg conditions, how bored did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Positive)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel bored after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_pos_neutral <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_pos_positive <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_pos_negative <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_negative)
+
+glm_feel_pos_AllCon <- glm(data = FYPFirstPilotData, Emo_Positive~scale(Age))
+summary(glm_feel_pos_AllCon)
+
+glm_feel_pos_PosCon <- glm(data = PosCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_PosCon)
+
+glm_feel_pos_NegCon <- glm(data = NegCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_NegCon)
+
+glm_feel_pos_NeuCon <- glm(data = NeuCon, Emo_Positive~scale(Age))
+summary(glm_feel_pos_NeuCon)
+
+```
+
+10. When assigned randomly to neutral, pos, neg conditions, how anxious did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Anxious)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel anxious after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_anxious_neutral <- glm(data = FYPFirstPilotData, Emo_Anxious~scale(Age)*Condition)
+summary(glm_feel_anxious_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_anxious_positive <- glm(data = FYPFirstPilotData, Emo_Anxious~scale(Age)*Condition)
+summary(glm_feel_anxious_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_anxious_negative <- glm(data = FYPFirstPilotData, Emo_Anxious~scale(Age)*Condition)
+summary(glm_feel_anxious_negative)
+
+glm_feel_anxious_AllCon <- glm(data = FYPFirstPilotData, Emo_Anxious~scale(Age))
+summary(glm_feel_anxious_AllCon)
+
+glm_feel_anxious_PosCon <- glm(data = PosCon, Emo_Anxious~scale(Age))
+summary(glm_feel_anxious_PosCon)
+
+glm_feel_anxious_NegCon <- glm(data = NegCon, Emo_Anxious~scale(Age))
+summary(glm_feel_anxious_NegCon)
+
+glm_feel_anxious_NeuCon <- glm(data = NeuCon, Emo_Anxious~scale(Age))
+summary(glm_feel_anxious_NeuCon)
+
+```
+
+11. When assigned randomly to neutral, pos, neg conditions, how frustrated did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Frustrated)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel frustrated after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_frustrated_neutral <- glm(data = FYPFirstPilotData, Emo_Frustrated~scale(Age)*Condition)
+summary(glm_feel_frustrated_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_frustrated_positive <- glm(data = FYPFirstPilotData, Emo_Frustrated~scale(Age)*Condition)
+summary(glm_feel_frustrated_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_frustrated_negative <- glm(data = FYPFirstPilotData, Emo_Frustrated~scale(Age)*Condition)
+summary(glm_feel_frustrated_negative)
+
+glm_feel_frustrated_AllCon <- glm(data = FYPFirstPilotData, Emo_Frustrated~scale(Age))
+summary(glm_feel_frustrated_AllCon)
+
+glm_feel_frustrated_PosCon <- glm(data = PosCon, Emo_Frustrated~scale(Age))
+summary(glm_feel_frustrated_PosCon)
+
+glm_feel_frustrated_NegCon <- glm(data = NegCon, Emo_Frustrated~scale(Age))
+summary(glm_feel_frustrated_NegCon)
+
+glm_feel_frustrated_NeuCon <- glm(data = NeuCon, Emo_Frustrated~scale(Age))
+summary(glm_feel_frustrated_NeuCon)
+
+```
+
+12. When assigned randomly to neutral, pos, neg conditions, how interested did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_Interested)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel interested after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_interested_neutral <- glm(data = FYPFirstPilotData, Emo_Interested~scale(Age)*Condition)
+summary(glm_feel_interested_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_interested_positive <- glm(data = FYPFirstPilotData, Emo_Interested~scale(Age)*Condition)
+summary(glm_feel_interested_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_interested_negative <- glm(data = FYPFirstPilotData, Emo_Interested~scale(Age)*Condition)
+summary(glm_feel_interested_negative)
+
+glm_feel_interested_AllCon <- glm(data = FYPFirstPilotData, Emo_Interested~scale(Age))
+summary(glm_feel_interested_AllCon)
+
+glm_feel_interested_PosCon <- glm(data = PosCon, Emo_Interested~scale(Age))
+summary(glm_feel_interested_PosCon)
+
+glm_feel_interested_NegCon <- glm(data = NegCon, Emo_Interested~scale(Age))
+summary(glm_feel_interested_NegCon)
+
+glm_feel_interested_NeuCon <- glm(data = NeuCon, Emo_Interested~scale(Age))
+summary(glm_feel_interested_NeuCon)
+
+```
+
+13. When assigned randomly to neutral, pos, neg conditions, how overall negative emotion (not include general negative) did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_All_Negative)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel overall negative emotions after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_neg_emos_neutral <- glm(data = FYPFirstPilotData, Emo_All_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_emos_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_neg_emos_positive <- glm(data = FYPFirstPilotData, Emo_All_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_emos_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_neg_emos_negative <- glm(data = FYPFirstPilotData, Emo_All_Negative~scale(Age)*Condition)
+summary(glm_feel_neg_emos_negative)
+
+glm_feel_neg_emos_AllCon <- glm(data = FYPFirstPilotData, Emo_All_Negative~scale(Age))
+summary(glm_feel_neg_emos_AllCon)
+
+glm_feel_neg_emos_PosCon <- glm(data = PosCon, Emo_All_Negative~scale(Age))
+summary(glm_feel_neg_emos_PosCon)
+
+glm_feel_neg_emos_NegCon <- glm(data = NegCon, Emo_All_Negative~scale(Age))
+summary(glm_feel_neg_emos_NegCon)
+
+glm_feel_neg_emos_NeuCon <- glm(data = NeuCon, Emo_All_Negative~scale(Age))
+summary(glm_feel_neg_emos_NeuCon)
+
+```
+
+14. When assigned randomly to neutral, pos, neg conditions, how overall positive emotion (not include general positive) did you feel
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Age, y = Emo_All_Positive)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  ggthemes::theme_few() + 
+  labs(y = "Feel overall positive emotions after reading vignette", x = "Age") + 
+  facet_grid(.~Condition)
+
+# Linear regression
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_feel_pos_emos_neutral <- glm(data = FYPFirstPilotData, Emo_All_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_emos_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_feel_pos_emos_positive <- glm(data = FYPFirstPilotData, Emo_All_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_emos_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_feel_pos_emos_negative <- glm(data = FYPFirstPilotData, Emo_All_Positive~scale(Age)*Condition)
+summary(glm_feel_pos_emos_negative)
+
+glm_feel_pos_emos_AllCon <- glm(data = FYPFirstPilotData, Emo_All_Positive~scale(Age))
+summary(glm_feel_pos_emos_AllCon)
+
+glm_feel_pos_emos_PosCon <- glm(data = PosCon, Emo_All_Positive~scale(Age))
+summary(glm_feel_pos_emos_PosCon)
+
+glm_feel_pos_emos_NegCon <- glm(data = NegCon, Emo_All_Positive~scale(Age))
+summary(glm_feel_pos_emos_NegCon)
+
+glm_feel_pos_emos_NeuCon <- glm(data = NeuCon, Emo_All_Positive~scale(Age))
+summary(glm_feel_pos_emos_NeuCon)
+
+```
+
+### Demographics
+
+```{r}
+
+#Gender
+
+FYPFirstPilotData$Gender <- as.factor(FYPFirstPilotData$Gender)
+FYPFirstPilotData$Gender_factor <- dplyr::recode(FYPFirstPilotData$Gender, '1' = "Female", '2' = "Male", '3' = "Other")
+
+gendertable <- FYPFirstPilotData %>%
+  group_by(Condition, Gender_factor) %>%
+  summarize(Freq=n())
+gendertable
+
+ggplot(gendertable, aes(x = Condition, y = Freq, fill = Gender_factor, colour = Gender_factor)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = signif(Freq)), color="black", position = position_dodge(0.9)) 
+
+# Plot of amount to divide to poor children 
+ggplot(data = FYPFirstPilotData1000, mapping = aes(x = Gender, y = Divide_OtherChildren)) +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "glm", color="black") + 
+  geom_hline(yintercept = 500, linetype = "dashed") + 
+  ggthemes::theme_few() + 
+  labs(y = "Amount to give to other children out of 1000", x = "Gender") + 
+  facet_grid(.~Condition)
+
+# Linear regression (divide to other children): 
+glm_divide_bygender <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~Gender)
+summary(glm_divide_bygender)
+
+#Ethnicity
+
+FYPFirstPilotData$EuroAmerican <- ifelse(FYPFirstPilotData$Ethnicity == '7', 1, 0) # White vs. non-white
+FYPFirstPilotData$EuroAmerican <- as.factor(FYPFirstPilotData$EuroAmerican)
+FYPFirstPilotData$EuroAmerican_factor <- dplyr::recode(FYPFirstPilotData$EuroAmerican, '1' = "White", '0' = "Non-White")
+
+ethnicitytable <- FYPFirstPilotData %>%
+  group_by(Condition, EuroAmerican_factor) %>%
+  summarize(Freq=n())
+ethnicitytable
+
+ggplot(ethnicitytable, aes(x = Condition, y = Freq, fill = EuroAmerican_factor, colour = EuroAmerican_factor)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = signif(Freq)), color="black", position = position_dodge(0.9)) 
+
+#Employment
+
+FYPFirstPilotData$Employment <- as.factor(FYPFirstPilotData$Employment)
+FYPFirstPilotData$Employment_factor <- dplyr::recode(FYPFirstPilotData$Employment, '1' = "Working for pay (part-time or full-time)", '2' = "Not currently working for pay", '3' = "Retired")
+
+employmenttable <- FYPFirstPilotData %>%
+  group_by(Condition, Employment_factor) %>%
+  summarize(Freq=n())
+employmenttable
+
+ggplot(employmenttable, aes(x = Condition, y = Freq, fill = Employment_factor, colour = Employment_factor)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = signif(Freq)), color="black", position = position_dodge(0.9)) 
+
+#Political
+
+FYPFirstPilotData$PoliticalAffiliation <- as.factor(FYPFirstPilotData$PoliticalAffiliation)
+FYPFirstPilotData$PoliticalAffiliation_factor <- dplyr::recode(FYPFirstPilotData$PoliticalAffiliation, '1' = "Republican", '2' = "Democrat", '3' = "Independent", '4' = "Other")
+
+politicaltable <- FYPFirstPilotData %>%
+  group_by(Condition, PoliticalAffiliation_factor) %>%
+  summarize(Freq=n())
+politicaltable
+
+ggplot(politicaltable, aes(x = Condition, y = Freq, fill = PoliticalAffiliation_factor, colour = PoliticalAffiliation_factor)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = signif(Freq)), color="black", position = position_dodge(0.9)) 
+
+#MaritalStatus
+
+FYPFirstPilotData$MaritalStatus <- as.factor(FYPFirstPilotData$MaritalStatus)
+FYPFirstPilotData$MaritalStatus_factor <- dplyr::recode(FYPFirstPilotData$MaritalStatus, '1' = "Single", '2' = "Married", '3' = "Domestic partnership", '4' = "Widowed", '5' = "Divorced or separated", '6' = "Other")
+
+maritaltable <- FYPFirstPilotData %>%
+  group_by(Condition, MaritalStatus_factor) %>%
+  summarize(Freq=n())
+maritaltable
+
+ggplot(maritaltable, aes(x = Condition, y = Freq, fill = MaritalStatus_factor, colour = MaritalStatus_factor)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = signif(Freq)), color="black", position = position_dodge(0.9))
+
+#SubjectiveSES
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = SubjectiveSES)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(SubjectiveSES ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#Education
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = Education)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(Education ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#HouseholdIncome
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = HouseholdIncome)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(HouseholdIncome ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#Children
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = Children)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(Children ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#YoungRelatives
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = YoungRelatives)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(YoungRelatives ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+```
+
+### Age and Time
+
+```{r}
+
+#Age
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = Age)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange") 
+
+PositiveCondition <- subset(FYPFirstPilotData, Condition == "Positive")
+summary(PositiveCondition$Age)
+NegativeCondition <- subset(FYPFirstPilotData, Condition == "Negative")
+summary(NegativeCondition$Age)
+NeutralCondition <- subset(FYPFirstPilotData, Condition == "Neutral")
+summary(NeutralCondition$Age)
+summary(FYPFirstPilotData$Age)
+
+aov(Age ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#SubjectiveAge
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = SubjectiveAge)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(SubjectiveAge ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#FTP
+
+FYPFirstPilotData$FTP_8R <- car::recode(FYPFirstPilotData$FTP_8, "1 = 7; 2 = 6; 3 = 5; 4 = 4; 5 = 3; 6 = 2; 7 = 1")
+FYPFirstPilotData$FTP_9R <- car::recode(FYPFirstPilotData$FTP_9, "1 = 7; 2 = 6; 3 = 5; 4 = 4; 5 = 3; 6 = 2; 7 = 1")
+FYPFirstPilotData$FTP_10R <- car::recode(FYPFirstPilotData$FTP_10, "1 = 7; 2 = 6; 3 = 5; 4 = 4; 5 = 3; 6 = 2; 7 = 1")
+
+FYPFirstPilotData <- FYPFirstPilotData %>% 
+  mutate_at(c('FTP_1', 'FTP_2', 'FTP_3', 'FTP_4', 'FTP_5', 'FTP_6', 'FTP_7', 'FTP_8', 'FTP_8R', 'FTP_9', 'FTP_9R', 'FTP_10', 'FTP_10R'), as.numeric)
+
+FYPFirstPilotData$FTPTotal <- rowMeans(FYPFirstPilotData[c('FTP_1', 'FTP_2', 'FTP_3', 'FTP_4', 'FTP_5', 'FTP_6', 'FTP_7', 'FTP_8R', 'FTP_9R', 'FTP_10R')], na.rm=F)
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = FTPTotal)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(FTPTotal ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+#TimeSavor
+
+FYPFirstPilotData$TimeSavorTotal <- rowMeans(FYPFirstPilotData[c('TS_1', 'TS_2', 'TS_3', 'TS_4')], na.rm=F)
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = TimeSavorTotal)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(TimeSavorTotal ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+```
+
+### Individualism/Collectivism
+
+```{r}
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = IOiS_Other)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov(IOiS_Other ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+ggplot(data = FYPFirstPilotData, mapping = aes(x = Condition, y = IOiS_Community)) +
+  stat_summary(fun = "mean", geom = "bar", width = 0.5) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "linerange")
+
+aov( ~ Condition, data = FYPFirstPilotData) %>% 
+  summary()
+
+```
+
+### Main graphs and main analyses (with covariates)
+
+1. Control for number of children
+
+```{r}
+
+# Linear regression (divide to other children): 
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Children)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Children)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Children)
+summary(glm_divide_negative)
+
+# Logistic regression (give all to other children): 
+
+FYPFirstPilotData$Choose <- car::recode(FYPFirstPilotData$Choose, "1 = 0; 2 = 1")
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Children, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Children, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Children, family = "binomial")
+summary(glm_choose_negative)
+
+```
+
+2. Control for political affiliation
+
+```{r}
+
+# Linear regression (divide to other children): 
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+PoliticalAffiliation)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+PoliticalAffiliation)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+PoliticalAffiliation)
+summary(glm_divide_negative)
+
+# Logistic regression (give all to other children): 
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+PoliticalAffiliation, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+PoliticalAffiliation, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+PoliticalAffiliation, family = "binomial")
+summary(glm_choose_negative)
+
+```
+
+3. Control for employment status 
+
+```{r}
+
+# Linear regression (divide to other children): 
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Employment)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Employment)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+Employment)
+summary(glm_divide_negative)
+
+# Logistic regression (give all to other children): 
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Employment, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Employment, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+Employment, family = "binomial")
+summary(glm_choose_negative)
+
+```
+
+4. Control for subjective SES
+
+```{r}
+
+# Linear regression (divide to other children): 
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData1000$Condition)
+glm_divide_neutral <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+SubjectiveSES)
+summary(glm_divide_neutral)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_divide_positive <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+SubjectiveSES)
+summary(glm_divide_positive)
+
+FYPFirstPilotData1000$Condition <- factor(FYPFirstPilotData1000$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_divide_negative <- glm(data = FYPFirstPilotData1000, Divide_OtherChildren~scale(Age)*Condition+SubjectiveSES)
+summary(glm_divide_negative)
+
+# Logistic regression (give all to other children): 
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Neutral', 'Positive', 'Negative'))
+levels(FYPFirstPilotData$Condition)
+glm_choose_neutral <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+SubjectiveSES, family = "binomial")
+summary(glm_choose_neutral)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Positive', 'Negative', 'Neutral'))
+glm_choose_positive <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+SubjectiveSES, family = "binomial")
+summary(glm_choose_positive)
+
+FYPFirstPilotData$Condition <- factor(FYPFirstPilotData$Condition, levels=c('Negative', 'Neutral', 'Positive'))
+glm_choose_negative <- glm(data = FYPFirstPilotData, Choose~scale(Age)*Condition+SubjectiveSES, family = "binomial")
+summary(glm_choose_negative)
+
+```
